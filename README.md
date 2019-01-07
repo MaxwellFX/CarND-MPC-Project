@@ -1,7 +1,114 @@
-# CarND-Controls-MPC
-Self-Driving Car Engineer Nanodegree Program
+# Rubric points
+
+## 1. Model description:
+
+The vehicle model used in this project is a simple Kinematic model. It ignores tire force, gravity, air resistance/drag, geometry of the vehicle and vehicle mass. Since all above mentioned factors are not avaiblable in the simulator, the simple Kinematic model is sufficient for this project. (Although in realistic sccenario dynamic model is much appropriate)
+
+The vehicle kinematic model can be described with 2D cartesian coordinates, steering angle, vehicle velocity and their respective errors. The model combines the vehicle states and actuations from previous timestep to calculate the current states, based on the following equations:
+
+<p align="center"><img src = "./writeUp/KinematicModelEquations.PNG" alt = "Kinematic Model Equations" width = "600px" class ="center"><p align="center">
+
+Where `delta_t` in third equation represents the actuation change in steering angle, `a_t` in the speed equation represents the acceleration actuation, andd `ψ_des_t` denotes the desired ψ.
+
+Note that the steering angle actuation `delta_t` are constrained within [-25, 25] degree, and the acceleration actuation `a_t` is constrainted within [-1, 1] where `1` represents full on acceleration, `-1` represents full on brake.
+
+The goal is use such model to have the vehicle driving along the desired path. It is achieved by minimizing cost that consists of the Cross-Track-Error and Steering-Error calculated from above equations. 
+
+## 2. Timestep length and Elapsed Duration (N & dt):
+The value chosen for N and dt are 15 and 0.1. `dt` is set to 100ms because it is roughly the time delay in realistic scenarios for modern vehicles. I set `N` = 15 simply beccause this produces better result given the top speed I have chosen (`Vmax` = 60 mph). 
+
+These value mean that the solver is considering 1.5 seconds duration in which to determine a corrective trajectory. 
+
+Other value tried: N = [25, 20, 18, 10]. 10 steps are too short to produce ideal value when the vehicle is running fast, opposite is true for N > 18. 
+
+## 3. Polynomial Fitting and MPC preprocessing
+
+The waypoints were preprocessed through perspective transformation such that the vehicles's coordinates are now centered at the origin, simplifies the calculation process. 
+
+<pre><code>// Perspectove transformation such that the reference system is set at origin:
+// ie: px = 0, py = 0, psi = 0
+for (int i = 0; i < ptsx.size(); i++)
+{
+    double shift_x = ptsx[i] - px;
+    double shift_y = ptsy[i] - py;
+    waypoints_x.push_back(shift_x * cos(-psi) - shift_y * sin(-psi));
+    waypoints_y.push_back(shift_x * sin(-psi) + shift_y * cos(-psi));
+}
+
+// Conversion to Eigen::VectorXd
+double *ptrx = &waypoints_x[0];
+double *ptry = &waypoints_y[0];
+Eigen::Map<Eigen::VectorXd> waypoints_x_transform(ptrx, 6);
+Eigen::Map<Eigen::VectorXd> waypoints_y_transform(ptry, 6);
+</code></pre>
+
+Then a 3rd degree polynomial is fitted to the transformed waypoints before feeding into the solver:
+
+<pre><code>// Find coeffs of a 3rd order polynomial
+auto coeffs = polyfit(waypoints_x_transform, waypoints_y_transform, 3);
+double cte = polyeval(coeffs, 0);
+double epsi = -atan(coeffs[1]);
+</code></pre>
+
+Then use the coefficients found from the polynomial to predict a trajectory
+
+<pre><code>// State values
+Eigen::VectorXd state(6);
+state << 0, 0, 0, v, cte, epsi;
+auto vars = mpc.Solve(state, coeffs);
+</code></pre>
+
+
+## 4. Model Predictive Control with Latency
+The mechanism to deal with the latency is quite simple. Since the time duration is set to 100ms, and from previous section we have discussed that for modern vehicle the actuation delay is roughly around 100ms, thus the current actuation is delayed to the next timestep. In the code, actuations from previous step is used for the current evalutation: 
+
+<pre><code>// use previous actuations (to account for latency)
+if (t > 1)
+{
+    a0 = vars[a_start + t - 2];
+    delta0 = vars[delta_start + t - 2];
+}
+</code></pre>
+
+As for the control itself, we use the solver to produce the control input such that the vehicle follows the reference trajactory when the cost is minimized. 
+
+<pre><code>// The part of the cost based on the reference state.
+for (size_t t = 0; t < N; t++)
+{
+    fg[0] += cte_weight * CppAD::pow(vars[cte_start + t], 2);
+    fg[0] += epsi_weight * CppAD::pow(vars[epsi_start + t], 2);
+    fg[0] += v_weight * CppAD::pow(vars[v_start + t] - ref_v, 2);
+}
+
+// Minimize change-rate.
+for (size_t t = 0; t < N - 1; t++)
+{
+    fg[0] += actuator_weight * CppAD::pow(vars[delta_start + t], 2);
+    fg[0] += actuator_weight * CppAD::pow(vars[a_start + t], 2);
+    // Adding additional penalty for speeding while steering
+    fg[0] += speed_turn_weight * CppAD::pow(vars[delta_start + t] * vars[v_start + t], 2);
+}
+
+// Minimize the value gap between sequential actuations.
+for (size_t t = 0; t < N - 2; t++)
+{
+    fg[0] += steering_weight * CppAD::pow(vars[delta_start + t + 1] - vars[delta_start + t], 2);
+    fg[0] += acceleration_weight * CppAD::pow(vars[a_start + t + 1] - vars[a_start + t], 2);
+}
+</code></pre>
+
+## 5. Final video demonstration
+
+[link](https://youtu.be/aRncBcHTjS8)
+
+Note: I apologize for uploading video in cellphone format. But my processor is not fast enough to conduct a video recording without messing up the MPC proccessing, so I recorded the run using my cellphone.
+
+I included the compiled app in the build folder as well
+
+
 
 ---
+# How to run
 
 ## Dependencies
 
@@ -33,84 +140,6 @@ Self-Driving Car Engineer Nanodegree Program
 
 ## Basic Build Instructions
 
-1. Clone this repo.
 2. Make a build directory: `mkdir build && cd build`
 3. Compile: `cmake .. && make`
 4. Run it: `./mpc`.
-
-## Build with Docker-Compose
-The docker-compose can run the project into a container
-and exposes the port required by the simulator to run.
-
-1. Clone this repo.
-2. Build image: `docker-compose build`
-3. Run Container: `docker-compose up`
-4. On code changes repeat steps 2 and 3.
-
-## Tips
-
-1. The MPC is recommended to be tested on examples to see if implementation behaves as desired. One possible example
-is the vehicle offset of a straight line (reference). If the MPC implementation is correct, it tracks the reference line after some timesteps(not too many).
-2. The `lake_track_waypoints.csv` file has waypoints of the lake track. This could fit polynomials and points and see of how well your model tracks curve. NOTE: This file might be not completely in sync with the simulator so your solution should NOT depend on it.
-3. For visualization this C++ [matplotlib wrapper](https://github.com/lava/matplotlib-cpp) could be helpful.)
-4.  Tips for setting up your environment are available [here](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/0949fca6-b379-42af-a919-ee50aa304e6a/lessons/f758c44c-5e40-4e01-93b5-1a82aa4e044f/concepts/23d376c7-0195-4276-bdf0-e02f1f3c665d)
-5. **VM Latency:** Some students have reported differences in behavior using VM's ostensibly a result of latency.  Please let us know if issues arise as a result of a VM environment.
-
-## Editor Settings
-
-We have kept editor configuration files out of this repo to
-keep it as simple and environment agnostic as possible. However, we recommend
-using the following settings:
-
-* indent using spaces
-* set tab width to 2 spaces (keeps the matrices in source code aligned)
-
-## Code Style
-
-Please (do your best to) stick to [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html).
-
-## Project Instructions and Rubric
-
-Note: regardless of the changes you make, your project must be buildable using
-cmake and make!
-
-More information is only accessible by people who are already enrolled in Term 2
-of CarND. If you are enrolled, see [the project page](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/f1820894-8322-4bb3-81aa-b26b3c6dcbaf/lessons/b1ff3be0-c904-438e-aad3-2b5379f0e0c3/concepts/1a2255a0-e23c-44cf-8d41-39b8a3c8264a)
-for instructions and the project rubric.
-
-## Hints!
-
-* You don't have to follow this directory structure, but if you do, your work
-  will span all of the .cpp files here. Keep an eye out for TODOs.
-
-## Call for IDE Profiles Pull Requests
-
-Help your fellow students!
-
-We decided to create Makefiles with cmake to keep this project as platform
-agnostic as possible. We omitted IDE profiles to ensure
-students don't feel pressured to use one IDE or another.
-
-However! I'd love to help people get up and running with their IDEs of choice.
-If you've created a profile for an IDE you think other students would
-appreciate, we'd love to have you add the requisite profile files and
-instructions to ide_profiles/. For example if you wanted to add a VS Code
-profile, you'd add:
-
-* /ide_profiles/vscode/.vscode
-* /ide_profiles/vscode/README.md
-
-The README should explain what the profile does, how to take advantage of it,
-and how to install it.
-
-Frankly, I've never been involved in a project with multiple IDE profiles
-before. I believe the best way to handle this would be to keep them out of the
-repo root to avoid clutter. Most profiles will include
-instructions to copy files to a new location to get picked up by the IDE, but
-that's just a guess.
-
-One last note here: regardless of the IDE used, every submitted project must
-still be compilable with cmake and make./
-
-## How to write a README
-A well written README file can enhance your project and portfolio and develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).

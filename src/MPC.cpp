@@ -6,6 +6,7 @@
 using CppAD::AD;
 
 // TODO: Set the timestep length and duration
+// For more realistic approach, the delta has been set to around 100 ms
 size_t N = 15;
 double dt = 0.1;
 
@@ -44,7 +45,8 @@ class FG_eval
     void operator()(ADvector &fg, const ADvector &vars)
     {
         // TODO: implement MPC
-        // `fg` a vector of the cost constraints, `vars` is a vector of variable values (state & actuators)
+        // `fg` a vector of the cost constraints, 
+		// `vars` is a vector of variable values (state & actuators)
 		fg[0] = 0;
 
         // weights used to refine cost value
@@ -71,6 +73,10 @@ class FG_eval
             fg[0] += actuator_weight * CppAD::pow(vars[delta_start + t], 2);
             fg[0] += actuator_weight * CppAD::pow(vars[a_start + t], 2);
 			// Adding additional penalty for speeding while steering
+			
+			// To instructor: 
+			// I'm not sure what would be the best cost function, 
+            // but this worksfor my current hyperparameters (sort of) 
 			fg[0] += speed_turn_weight * CppAD::pow(vars[delta_start + t] * vars[v_start + t], 2);
         }
 		
@@ -86,8 +92,7 @@ class FG_eval
         //
 
         // Initial constraints
-		// We add 1 to each of the starting indices due to cost being located at
-        // index 0 of `fg`.
+		// We add 1 to each of the starting indices due to cost being located at index 0 of `fg`.
         // This bumps up the position of all the other values.
         fg[1 + x_start] = vars[x_start];
         fg[1 + y_start] = vars[y_start];
@@ -99,22 +104,23 @@ class FG_eval
         // Remaining constraints
         for (size_t t = 1; t < N; t++)
         {
-
-            AD<double> x0 = vars[x_start + t - 1]; // The state at time t
+			// The state at time t
+            AD<double> x0 = vars[x_start + t - 1]; 
             AD<double> y0 = vars[y_start + t - 1];
             AD<double> psi0 = vars[psi_start + t - 1];
             AD<double> v0 = vars[v_start + t - 1];
             AD<double> cte0 = vars[cte_start + t - 1];
             AD<double> epsi0 = vars[epsi_start + t - 1];
 
-            AD<double> x1 = vars[x_start + t]; // The state at time t+1
+			// The state at time t+1
+            AD<double> x1 = vars[x_start + t]; 
             AD<double> y1 = vars[y_start + t];
             AD<double> psi1 = vars[psi_start + t];
             AD<double> v1 = vars[v_start + t];
             AD<double> cte1 = vars[cte_start + t];
             AD<double> epsi1 = vars[epsi_start + t];
 
-            // Only consider the actuation at time t
+
             AD<double> delta0 = vars[delta_start + t - 1];
             AD<double> a0 = vars[a_start + t - 1];
 			

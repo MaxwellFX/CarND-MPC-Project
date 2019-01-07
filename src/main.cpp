@@ -118,7 +118,9 @@ int main()
 					
 					vector<double> waypoints_x;
                     vector<double> waypoints_y;
-					// Rotation and translation so the reference system is centered on the origin with 0 degrees
+					
+					// Perspectove transformation such that the reference system is set at origin:
+					// ie: px = 0, py = 0, psi = 0
                     for (int i = 0; i < ptsx.size(); i++)
                     {
                         double shift_x = ptsx[i] - px;
@@ -139,43 +141,19 @@ int main()
 					double cte = polyeval(coeffs, 0);
                     double epsi = -atan(coeffs[1]);
 					
-					/*
-					// Latency
-                    const double delay_t = .1;
-
-                    // Future state considering latency into
-                    // x, y and psi = 0 zero after transformation to new reference system
-                    double delay_x = v * delay_t;
-                    double delay_y = 0;
-                    double delay_psi = v * -steer_value / Lf * delay_t;
-                    double delay_v = v + throttle_value * delay_t;
-                    double delay_cte = cte + v * sin(epsi) * delay_t;
-                    double delay_epsi = epsi + v * -steer_value / Lf * delay_t;
-					*/
-					
 					
 					// State values
                     Eigen::VectorXd state(6);
-                    //state << delay_x, delay_y, delay_psi, delay_v, delay_cte, delay_epsi;
 					state << 0, 0, 0, v, cte, epsi;
                     auto vars = mpc.Solve(state, coeffs);
 					steer_value = vars[0];
                     throttle_value = vars[1];
-                    
-					
-                    
-
-                    
-                    // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
-                    // Otherwise the values will be in between [-deg2rad(25), deg2rad(25] instead of [-1, 1].
-                    
 
                     //Display the MPC predicted trajectory
                     vector<double> mpc_x_vals;
                     vector<double> mpc_y_vals;
 
-                    //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
-                    // the points in the simulator are connected by a Green line
+                    // MPC predicted trajectory displayed by a Green line
 					for (int i = 2; i < vars.size(); i++)
                     {
                         if (i % 2 == 0)
@@ -187,14 +165,12 @@ int main()
                             mpc_y_vals.push_back(vars[i]);
                         }
                     }
-                    
 
-                    //Display the waypoints/reference line
+                    //Reference way points displayed by Yellow line
                     vector<double> next_x_vals;
                     vector<double> next_y_vals;
 					
-					//.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
-                    // the points in the simulator are connected by a Yellow line
+					// Odd way to use counter, but way points takes double, thus double as counter
 					for (double i = 0; i < 100.0; i += 3.0)
                     {
                         next_x_vals.push_back(i);
